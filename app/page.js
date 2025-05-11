@@ -1,103 +1,141 @@
-import Image from "next/image";
+// app/page.js
+'use client';
+
+import React, { useState, useEffect } from 'react';
+import SearchBar from '@/components/SearchBar';
+import ProductList from '@/components/ProductList';
+import ModelLoadingIndicator from '@/components/ModelLoadingIndicator';
+import { getAllProducts } from '@/lib/products';
 
 export default function Home() {
-  return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="list-inside list-decimal text-sm/6 text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-[family-name:var(--font-geist-mono)] font-semibold">
-              app/page.js
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
+  const [products, setProducts] = useState([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isModelLoading, setIsModelLoading] = useState(false);
+  const [searchType, setSearchType] = useState('regular'); // 'regular' or 'semantic'
+  const [currentQuery, setCurrentQuery] = useState('');
+  const [currentCategory, setCurrentCategory] = useState(null);
+  const [error, setError] = useState(null);
+  const [searchMethod, setSearchMethod] = useState(null);
+  const [fallbackReason, setFallbackReason] = useState(null);
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+  // Load initial products on component mount
+  useEffect(() => {
+    setProducts(getAllProducts());
+  }, []);
+
+  const handleSearch = async (query, category = null) => {
+    setIsLoading(true);
+    setCurrentQuery(query);
+    setCurrentCategory(category);
+    setError(null);
+    setSearchMethod(null);
+    setFallbackReason(null);
+
+    try {
+      // Show model loading indicator on first semantic search
+      if (searchType === 'semantic' && !searchMethod) {
+        setIsModelLoading(true);
+      }
+
+      // Determine which API to use based on search type
+      const endpoint = searchType === 'regular' 
+        ? `/api/search?query=${encodeURIComponent(query)}${category ? `&category=${encodeURIComponent(category)}` : ''}` 
+        : `/api/semantic-search?query=${encodeURIComponent(query)}${category ? `&category=${encodeURIComponent(category)}` : ''}`;
+      
+      const response = await fetch(endpoint);
+      
+      if (!response.ok) {
+        throw new Error(`Search failed with status: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      let filteredResults = data.results;
+      
+      // If a category was selected and we're doing regular search, filter the results
+      // (For semantic search, we included the category in the query)
+      if (category && searchType === 'regular' && !data.category) {
+        filteredResults = filteredResults.filter(product => product.category === category);
+      }
+      
+      setProducts(filteredResults);
+      
+      // Set any search method and fallback information from the API
+      if (data.search_method) {
+        setSearchMethod(data.search_method);
+      }
+      
+      if (data.fallback_reason) {
+        setFallbackReason(data.fallback_reason);
+      }
+    } catch (error) {
+      console.error('Search error:', error);
+      setError('Failed to perform search. Please try again.');
+    } finally {
+      setIsLoading(false);
+      setIsModelLoading(false);
+    }
+  };
+
+  const toggleSearchType = () => {
+    const newSearchType = searchType === 'regular' ? 'semantic' : 'regular';
+    setSearchType(newSearchType);
+    
+    // Re-run the search with the new search type if there's a query
+    if (currentQuery) {
+      handleSearch(currentQuery);
+    }
+  };
+
+  return (
+    <main className="container mx-auto px-4 py-8">
+      <ModelLoadingIndicator isLoading={isModelLoading} />
+      
+      <header className="text-center mb-10">
+        <h1 className="text-3xl font-bold text-indigo-800 mb-2">Product Search</h1>
+        <p className="text-gray-600">Find products with regular or semantic vector search</p>
+      </header>
+
+      <SearchBar 
+        onSearch={handleSearch} 
+        searchType={searchType} 
+        onToggleSearchType={toggleSearchType} 
+      />
+      
+      {error && (
+        <div className="mt-4 p-4 bg-red-50 text-red-700 rounded-lg">
+          {error}
         </div>
-      </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
-    </div>
+      )}
+      
+      <div className="mt-4">
+        {(currentQuery || currentCategory) && !isLoading && (
+          <div className="text-gray-600">
+            <div>
+              Found {products.length} {products.length === 1 ? 'product' : 'products'} 
+              {currentQuery ? ` for "${currentQuery}"` : ''}
+              {currentCategory ? ` in category "${currentCategory}"` : ''}
+            </div>
+            
+            {searchMethod && (
+              <div className="text-sm mt-1">
+                <span className="text-indigo-600 font-medium">Search method:</span> {searchMethod}
+              </div>
+            )}
+            
+            {fallbackReason && (
+              <div className="text-sm mt-1 text-amber-600">
+                Note: {fallbackReason}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      <ProductList 
+        products={products} 
+        isLoading={isLoading}
+        searchType={searchType}
+      />
+    </main>
   );
 }
